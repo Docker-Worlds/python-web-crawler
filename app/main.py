@@ -94,29 +94,29 @@ def get_book_url_index():
     return bible_info_dataFrame
 
 def crawl_bible(book, chapter):
+    # Book 정보 추출
     new_testament_pandas = get_book_url_index()
     book_record = new_testament_pandas.loc[new_testament_pandas['Book'] == book]
+    book_index = book_record.index.values[:][0] + 1
 
-    book_index = book_record.index.values[:][0]
-
-    
-
+    # URL 생성
     korean_web_book_index = book_record['Korean url info'].values[:][0]
     korean_web_chapter = str(chapter)
 
     korean_complete_url = "http://bible.godpia.com/read/reading.asp?ver=gae&ver2=&vol=" + korean_web_book_index + "&chap="+ korean_web_chapter +"&sec="
 
+    # 대기
     random_sleep()
 
-    print(os.listdir(os.getcwd()))
-    
-    driver = webdriver.Chrome(executable_path='app/chromedriver')
+    # chrome driver 사용
+    driver = webdriver.Chrome(executable_path='app/chromedriver.exe')
     driver.get(url=korean_complete_url)
     driver.implicitly_wait(time_to_wait=0.5)
 
     num_of_pagedowns = 3
 
-    body = driver.find_element_by_tag_name('body')#스크롤하기 위해 소스 추출
+    # 스크롤하기 위해 소스 추출
+    body = driver.find_element_by_tag_name('body')
 
     while num_of_pagedowns:
         time.sleep(1)
@@ -124,43 +124,61 @@ def crawl_bible(book, chapter):
         num_of_pagedowns -= 1
     time.sleep(1)
 
+    # html 추출 완료
     korean_html = driver.page_source
     driver.close()
 
+    # verse 저장용 string
+    verse_string = "{\n"
+    verse_string += "\t\"verses\":[\n"
 
+    # html 파싱
     korean_soup = BeautifulSoup(korean_html, 'lxml')
-    print(korean_html)
+    korean_bible = korean_soup.find(class_="wide")
+    raw_verses = korean_bible.select('p > span')
 
-    #korean_bible = korean_soup.find_all(class_="wide")
+    for raw_verse in raw_verses:
+        full_verse = raw_verse.get_text() # 전체 verse text
 
-    #print(korean_bible)
+        parsed_raw_verse = raw_verse.select('span')[0].get_text()
+        verse_index = parsed_raw_verse # verse index text
+
+        pure_verse = full_verse[len(verse_index):] # index 제거된 verse
+
+        verse_string += "\t\t{\"" + verse_index + "\":\"" + pure_verse + "\"},\n"
+
+    # end save string 
+    verse_string = verse_string[:-2]
+    verse_string += "\n"
+    verse_string += "\t]\n"
+    verse_string += "}"
+
+    # write verses as json
+    f = open(os.path.join("app", "result", "book" + str(book_index), "chapter" + str(chapter)+".json"), 'w', encoding='utf8')
+    f.write(verse_string)
+    f.close()
+
+
+
     
 def main():
-    
+    # Book, Chapter, Verse Info 추출
     new_testment = get_book_url_index()
     books = new_testment['Book'].values[:]
     chapters = new_testment['chapter number'].values[:]
-    for book_name, max_chapter in zip(books, chapters):
+
+    # result 폴더 생성
+    if os.path.exists(os.path.join("app", "result")) is False:
+        os.mkdir(os.path.join("app", "result"))
+
+    # start crawler
+    for book_index, (book_name, max_chapter) in enumerate(zip(books, chapters)):
+        if os.path.exists(os.path.join("app", "result", "book" + str(book_index + 1))) is False:
+            os.mkdir(os.path.join("app", "result", "book" + str(book_index + 1)))
+        
         for chapter in range(1, max_chapter+1):
             crawl_bible(book_name, chapter)
     
 
 if __name__ == '__main__':
-    """
     main()
-    """
-    options = webdriver.ChromeOptions()
-    options.add_argument('--headless')
-    # options.add_argument('window-size=1200x600')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-
-    browser = webdriver.Chrome(chrome_options=options)
-    #chrome드라이버가 PATH 환경변수 설정이 되어있지 않다면 executable_path 옵션으로 chromedriver 위치 지정
-    #browser = webdriver.Chrome(chrome_options=options, executable_path="/usr/local/bin/chromedriver")
-
-    url = "http://google.com"
-
-    browser.get(url)
-    browser.save_screenshot("Website.png")
-    browser.quit()
